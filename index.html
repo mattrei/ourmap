@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <script src="//code.jquery.com/jquery-2.0.0.js"></script>
+    <style>
+    #map {
+      background-color: #fff;
+      border: 1px solid #ccc;
+    }
+    .background {
+      fill: none;
+      pointer-events: all;
+    }
+    #countries-cp, #states {
+      fill: #cde;
+      stroke: #fff;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    #countries .active, #states .active {
+      fill: #89a;
+    }
+    #cities {
+      stroke-width: 0;
+    }
+    .city {
+      fill: #345;
+      stroke: #fff;
+    }
+    pre.prettyprint {
+      border: 1px solid #ccc;
+      margin-bottom: 0;
+      padding: 9.5px;
+    }
+    #selected,
+    #selections,
+    #loading:after,
+    #about {
+      position:absolute;
+      background-color: #FFF;
+      opacity: 0.8;
+      border-radius: 2px;
+      padding: 10px 10px 0 10px;
+    }
+
+    #loading.visible:after {
+      top: 50%;
+      left: 50%;
+      height: 28px;
+      width: 80px;
+      margin-left: -50px;
+      margin-top: -30px;
+      content: 'drawing...';
+      font-size: 18px;
+    }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script  src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js" charset="utf-8"></script>
+    <script src="//d3js.org/topojson.v1.min.js"></script>
+    <script src="http://d3js.org/queue.v1.min.js"></script>
+    <script>
+    var m_width = $("#map").width(),
+        width = 938,
+        height = 500,
+        country,
+        state;
+
+    var projection = d3.geo.mercator()
+        .scale(150)
+        .translate([width / 2, height / 1.5]);
+
+    var path = d3.geo.path()
+        .projection(projection);
+
+/*
+    var zoom = d3.behavior.zoom()
+      .translate(projection.translate())
+      .scale(projection.scale())
+      .scaleExtent([height, 8 * height])
+      .on("zoom", zoomed);
+*/
+    var svg = d3.select("#map").append("svg")
+        .attr("preserveAspectRatio", "xMidYMid")
+        .attr("viewBox", "0 0 " + width + " " + height)
+        .attr("width", m_width)
+        .attr("height", m_width * height / width);
+
+    svg.append("rect")
+        .attr("class", "background")
+        .attr("width", width)
+        .attr("height", height)
+        .on("click", country_clicked);
+
+    var g = svg.append("g");
+
+
+    d3.json("countries.topo.json", function(error, us) {
+
+      var countries = topojson.feature(us, us.objects.countries).features;
+
+      gc = g.append("g")
+      .attr("id", "countries");
+
+        for (i=0; i < countries.length; i++) {
+          var bounds = path.bounds(countries[i]);
+          if (bounds[0][0] < 0) bounds[0][0] = 0;
+          if (bounds[1][0] > width) bounds[1][0] = width;
+          if (bounds[0][1] < 0) bounds[0][1] = 0;
+          if (bounds[1][1] < 0) bounds[1][1] = height;
+
+          gc
+          .append("image")
+          .datum(countries[i])
+          .attr("clip-path", function(d){return "url(#"+d.id+")";})
+          .attr("x", bounds[0][0])
+          .attr("y", bounds[0][1])
+          .attr("width", bounds[1][0] - bounds[0][0])
+          .attr("height", bounds[1][1] - bounds[0][1])
+          .attr("xlink:href","http://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Flag_of_Senegal.svg/200px-Flag_of_Senegal.svg.png")
+          .attr("preserveAspectRatio","none")
+          .on("click", country_clicked);
+
+          gc
+          .append("clipPath")
+          .datum(countries[i])
+          .attr("id", function(d) { return d.id})
+          .attr("class", "mask")
+          .append("path")
+          .attr("d", path)  // path(d)
+        }
+/*
+
+
+        */
+
+/*
+        gc = g.append("g")
+        .attr("id", "countries-cp")
+        .data(topojson.feature(us, us.objects.countries).features)
+        .enter()
+        .append("g")
+        .attr("clip-path", function(d){return "url(#"+d.id+"cp)";})
+        .append("foreignObject")
+        .attr("width", 20)
+        .attr("height", 20)
+        .attr("x", 0)
+        .attr("y", 0)
+        .append("body")
+        .append("iframe")
+        .attr("width", 20)
+        .attr("height", 20)
+        */
+        //.attr("src", "//www.youtube.com/embed/RKrNdxiBW3Y")
+
+    });
+
+    function zoom(xyz) {
+      g.transition()
+        .duration(750)
+        .attr("transform", "translate(" + projection.translate() + ")scale(" + xyz[2] + ")translate(-" + xyz[0] + ",-" + xyz[1] + ")")
+        .selectAll(["#countries", "#states", "#cities"])
+        .style("stroke-width", 1.0 / xyz[2] + "px")
+        .selectAll(".city")
+        .attr("d", path.pointRadius(20.0 / xyz[2]));
+    }
+
+    function get_xyz(d) {
+      var bounds = path.bounds(d); // bounding box
+      var w_scale = (bounds[1][0] - bounds[0][0]) / width;
+      var h_scale = (bounds[1][1] - bounds[0][1]) / height;
+      var z = .96 / Math.max(w_scale, h_scale);
+      var x = (bounds[1][0] + bounds[0][0]) / 2;
+      var y = (bounds[1][1] + bounds[0][1]) / 2 + (height / z / 6);
+      return [x, y, z];
+    }
+
+    function country_clicked(d) {
+      g.selectAll(["#states", "#cities"]).remove();
+      state = null;
+
+      if (country) {
+        g.selectAll("#" + country.id).style('display', null);
+      }
+
+      if (d && country !== d) {
+        var xyz = get_xyz(d);
+
+        country = d;
+        console.log(d.id);
+
+        if (d.id  == 'USA' || d.id == 'JPN' || d.id == 'GBR') {
+
+          var gs = g.append("g")
+            .attr("id", "states")
+
+          d3.json("states_" + d.id.toLowerCase() + ".topo.json", function(error, us) {
+
+            var states = topojson.feature(us, us.objects.states).features;
+
+
+              //.on("click", state_clicked);
+
+
+              for (i=0; i < states.length; i++) {
+                var bounds = path.bounds(states[i]);
+                if (bounds[0][0] < 0) bounds[0][0] = 0;
+                if (bounds[1][0] > width) bounds[1][0] = width;
+                if (bounds[0][1] < 0) bounds[0][1] = 0;
+                if (bounds[1][1] < 0) bounds[1][1] = height;
+
+
+                gs
+                  .append("clipPath")
+                  .datum(states[i])
+                  .attr("class", "mask")
+                  .attr("id", function(d) { return d.id; })
+                  .append("path")
+                  .attr("class", "active")
+                  .attr("d", path)
+
+                gs
+                .append("image")
+                .datum(states[i])
+                .attr("clip-path", function(d){return "url(#"+d.id+")";})
+                .attr("x", bounds[0][0])
+                .attr("y", bounds[0][1])
+                .attr("width", bounds[1][0] - bounds[0][0])
+                .attr("height", bounds[1][1] - bounds[0][1])
+                .attr("xlink:href","http://upload.wikimedia.org/wikipedia/commons/thumb/f/fd/Flag_of_Senegal.svg/200px-Flag_of_Senegal.svg.png")
+                .attr("preserveAspectRatio","none")
+                .on("click", state_clicked)
+                //.on("mousedown.log", new_user_point);
+              }
+
+
+            zoom(xyz);
+            //g.selectAll("#" + d.id).style('display', 'none');
+          });
+        } else {
+          zoom(xyz);
+        }
+      } else {
+        var xyz = [width / 2, height / 1.5, 1];
+        country = null;
+        zoom(xyz);
+      }
+    }
+
+    function state_clicked(d) {
+      g.selectAll("#cities").remove();
+
+      if (d && state !== d) {
+        var xyz = get_xyz(d);
+        state = d;
+
+        country_code = state.id.substring(0, 3).toLowerCase();
+        state_name = state.properties.name;
+
+        d3.json("cities_" + country_code + ".topo.json", function(error, us) {
+          g.append("g")
+            .attr("id", "cities")
+            .selectAll("path")
+            .data(topojson.feature(us, us.objects.cities).features.filter(function(d) { return state_name == d.properties.state; }))
+            .enter()
+            .append("path")
+            .attr("id", function(d) { return d.properties.name; })
+            .attr("class", "city")
+            .attr("d", path.pointRadius(20 / xyz[2]))
+            .on("click", city_clicked);;
+            //.attr("d", path);
+
+          zoom(xyz);
+        });
+      } else {
+        //state = null;
+        //country_clicked(country);
+        //new_user_point();
+      }
+    }
+
+    function new_user_point() {
+      console.log(d3.mouse(this));
+      var mp = d3.mouse(this);
+      var ll = projection.invert(d3.mouse(this));
+      console.log(ll);
+
+      g.append("circle")
+      .attr("cx", mp[0])
+      .attr("cy", mp[1])
+      .attr("r", 10)
+
+      g.append("path")
+          .attr("id", "user")
+          .attr("class", "city")
+          .datum(ll)
+          .attr("d", path.pointRadius(20));
+
+
+    }
+
+    function city_clicked(d) {
+      console.log(d);
+    }
+
+    $(window).resize(function() {
+      var w = $("#map").width();
+      svg.attr("width", w);
+      svg.attr("height", w * height / width);
+    });
+    </script>
+  </body>
+</html>
